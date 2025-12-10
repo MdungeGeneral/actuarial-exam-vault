@@ -86,7 +86,7 @@ const sessionType = urlParams.get('session');
 const year = urlParams.get('year');
 const paper = urlParams.get('paper');
 const questionNumber = urlParams.get('question');
-const maxMarks = parseInt(urlParams.get('maxMarks') || '20');
+const maxMarks = parseInt(urlParams.get('maxMarks') || '0');
 const isAIReview = urlParams.get('isAIReview') === 'true';
 
 // DOM elements
@@ -144,15 +144,15 @@ function setupSliders() {
 
 // Setup marks input
 function setupMarksInput() {
-    // Set default total marks from URL or 20
+    // Set default total marks from URL or 0
     totalMarksInput.value = maxMarks;
-    totalMarksHint.textContent = maxMarks;
+    totalMarksHint.textContent = maxMarks || '0';
 
     // Total marks input listener
     totalMarksInput.addEventListener('input', function() {
-        // Validate input
-        if (parseFloat(this.value) < 1) {
-            this.value = 1;
+        // Validate input - allow 0 or positive values
+        if (parseFloat(this.value) < 0) {
+            this.value = 0;
         }
         
         // Update hint and recalculate grade
@@ -162,7 +162,7 @@ function setupMarksInput() {
 
     // Marks awarded input listener
     marksInput.addEventListener('input', function() {
-        const totalMarks = parseFloat(totalMarksInput.value) || 20;
+        const totalMarks = parseFloat(totalMarksInput.value) || 0;
         
         // Validate input
         if (parseFloat(this.value) > totalMarks) {
@@ -191,22 +191,33 @@ function calculateSuggestedGrade() {
     const percentage = (avgScore / 10) * 100;
     
     // Get total marks
-    const totalMarks = parseFloat(totalMarksInput.value) || 20;
+    const totalMarks = parseFloat(totalMarksInput.value) || 0;
     
-    // Suggest marks based on percentage
-    const suggestedMarks = ((percentage / 100) * totalMarks).toFixed(1);
-    
-    // Auto-populate marks if empty
-    if (!marksInput.value || marksInput.value === '0') {
-        marksInput.value = suggestedMarks;
-        autoCalculateGrade();
+    // Only suggest marks if total marks is set
+    if (totalMarks > 0) {
+        // Suggest marks based on percentage
+        const suggestedMarks = ((percentage / 100) * totalMarks).toFixed(1);
+        
+        // Auto-populate marks if empty
+        if (!marksInput.value || marksInput.value === '0') {
+            marksInput.value = suggestedMarks;
+            autoCalculateGrade();
+        }
     }
 }
 
 // Auto-calculate grade based on marks entered
 function autoCalculateGrade() {
     const marksAwarded = parseFloat(marksInput.value) || 0;
-    const totalMarks = parseFloat(totalMarksInput.value) || 20;
+    const totalMarks = parseFloat(totalMarksInput.value) || 0;
+    
+    // Can't calculate percentage if total marks is 0
+    if (totalMarks === 0) {
+        calculatedGrade.textContent = '-';
+        calculatedPercentage.textContent = '-';
+        return;
+    }
+    
     const percentage = (marksAwarded / totalMarks) * 100;
     
     let grade = '';

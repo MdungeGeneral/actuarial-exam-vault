@@ -243,6 +243,98 @@ class IndexedDBStorageService {
             return { success: false, error: error.message };
         }
     }
+
+    // Save question grade to IndexedDB
+    async saveQuestionGrade(userId, gradingData) {
+        try {
+            await this.ensureDB();
+            
+            const gradingId = `grade_${userId}_${gradingData.subject}_${gradingData.year}_${gradingData.session}_P${gradingData.paper}_Q${gradingData.question}`;
+            
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction([this.storeName], 'readwrite');
+                const objectStore = transaction.objectStore(this.storeName);
+                
+                const data = {
+                    id: gradingId,
+                    userId: userId,
+                    type: 'questionGrade',
+                    ...gradingData,
+                    updatedAt: new Date().toISOString()
+                };
+                
+                const request = objectStore.put(data);
+
+                request.onsuccess = () => {
+                    resolve({ success: true });
+                };
+
+                request.onerror = () => {
+                    console.error('Error saving question grade to IndexedDB:', request.error);
+                    reject(request.error);
+                };
+            });
+        } catch (error) {
+            console.error('Error in saveQuestionGrade:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // Get all question grades for a user
+    async getQuestionGrades(userId) {
+        try {
+            await this.ensureDB();
+
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction([this.storeName], 'readonly');
+                const objectStore = transaction.objectStore(this.storeName);
+                const index = objectStore.index('userId');
+                const request = index.getAll(userId);
+
+                request.onsuccess = () => {
+                    // Filter only question grades
+                    const grades = request.result.filter(item => item.type === 'questionGrade');
+                    resolve(grades);
+                };
+
+                request.onerror = () => {
+                    console.error('Error getting question grades from IndexedDB:', request.error);
+                    reject(request.error);
+                };
+            });
+        } catch (error) {
+            console.error('Error in getQuestionGrades:', error);
+            return [];
+        }
+    }
+
+    // Delete a specific question grade
+    async deleteQuestionGrade(userId, subject, year, session, paper, question) {
+        try {
+            await this.ensureDB();
+
+            const id = `grade_${userId}_${subject}_${year}_${session}_P${paper}_Q${question}`;
+
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction([this.storeName], 'readwrite');
+                const objectStore = transaction.objectStore(this.storeName);
+                const request = objectStore.delete(id);
+
+                request.onsuccess = () => {
+                    console.log(`Deleted grade from IndexedDB: ${id}`);
+                    resolve({ success: true });
+                };
+
+                request.onerror = () => {
+                    console.error('Error deleting grade from IndexedDB:', request.error);
+                    reject(request.error);
+                };
+            });
+        } catch (error) {
+            console.error('Error in deleteQuestionGrade:', error);
+            return { success: false, error: error.message };
+        }
+    }
 }
 
 // Create and export a single instance

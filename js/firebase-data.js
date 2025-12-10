@@ -239,18 +239,61 @@ class FirestoreDataService {
         }
     }
 
-    // Get user gradings as array
+    // Get user gradings as array (includes both submission-based and standalone grades)
     async getUserGradings(userId) {
         try {
-            const result = await this.getAllUserGradings(userId);
-            if (result.success) {
-                // Convert object to array
-                return Object.values(result.data);
-            }
-            return [];
+            const q = query(
+                collection(db, this.gradingsCollection),
+                where('userId', '==', userId)
+            );
+            const querySnapshot = await getDocs(q);
+            
+            const gradings = [];
+            querySnapshot.forEach((doc) => {
+                gradings.push(doc.data());
+            });
+            
+            return gradings;
         } catch (error) {
             console.error('Error getting user gradings:', error);
             return [];
+        }
+    }
+
+    // Save standalone question grade (without submission ID)
+    async saveQuestionGrade(userId, gradingData) {
+        try {
+            // Generate a unique grading ID based on exam details
+            const gradingId = `${userId}_${gradingData.subject}_${gradingData.year}_${gradingData.session}_P${gradingData.paper}_Q${gradingData.question}`;
+            const gradingRef = doc(db, this.gradingsCollection, gradingId);
+            await setDoc(gradingRef, {
+                userId: userId,
+                ...gradingData,
+                updatedAt: serverTimestamp()
+            }, { merge: true }); // Use merge to update existing or create new
+            return { success: true };
+        } catch (error) {
+            console.error('Error saving question grade:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // Get question grades (wrapper to match indexedDB interface)
+    async getQuestionGrades(userId) {
+        return await this.getUserGradings(userId);
+    }
+
+    // Delete a specific question grade
+    async deleteQuestionGrade(userId, subject, year, session, paper, question) {
+        try {
+            const gradingId = `${userId}_${subject}_${year}_${session}_P${paper}_Q${question}`;
+            const gradingRef = doc(db, this.gradingsCollection, gradingId);
+            await deleteDoc(gradingRef);
+            console.log(`Deleted grade: ${gradingId}`);
+            return { success: true };
+        } catch (error) {
+            console.error('Error deleting question grade:', error);
+            return { success: false, error: error.message };
         }
     }
 }

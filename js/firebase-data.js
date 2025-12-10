@@ -282,6 +282,20 @@ class FirestoreDataService {
     async getQuestionGrades(userId) {
         return await this.getUserGradings(userId);
     }
+
+    // Delete a specific question grade
+    async deleteQuestionGrade(userId, subject, year, session, paper, question) {
+        try {
+            const gradingId = `${userId}_${subject}_${year}_${session}_P${paper}_Q${question}`;
+            const gradingRef = doc(db, this.gradingsCollection, gradingId);
+            await deleteDoc(gradingRef);
+            console.log(`Deleted grade: ${gradingId}`);
+            return { success: true };
+        } catch (error) {
+            console.error('Error deleting question grade:', error);
+            return { success: false, error: error.message };
+        }
+    }
 }
 
 // Create and export a single instance

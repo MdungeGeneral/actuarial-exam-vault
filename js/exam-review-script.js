@@ -34,6 +34,7 @@ onAuthStateChanged(auth, async (user) => {
 
 // Modal management
 let currentQuestionNumber = null;
+let deleteConfirmResolve = null;
 
 // Modal functions
 function showReviewTypeModal(questionNumber) {
@@ -54,6 +55,21 @@ function showAiInstructionsModal() {
 
 function hideAiInstructionsModal() {
     const modal = document.getElementById('aiInstructionsModal');
+    modal.style.display = 'none';
+}
+
+function showDeleteConfirmModal(questionNumber) {
+    return new Promise((resolve) => {
+        deleteConfirmResolve = resolve;
+        const modal = document.getElementById('deleteConfirmModal');
+        const message = document.getElementById('deleteConfirmMessage');
+        message.textContent = `Question ${questionNumber} has been graded. Removing it will delete the saved grade. Continue?`;
+        modal.style.display = 'flex';
+    });
+}
+
+function hideDeleteConfirmModal() {
+    const modal = document.getElementById('deleteConfirmModal');
     modal.style.display = 'none';
 }
 
@@ -90,8 +106,28 @@ const aiPromptText = document.getElementById('aiPromptText');
 let questionCount = 8; // Default 8 questions
 let submissionData = null;
 
+// Get storage key for question count
+function getQuestionCountStorageKey() {
+    return `questionCount_${subject}_${year}_${sessionType}_P${paper}`;
+}
+
+// Load question count from localStorage
+function loadQuestionCount() {
+    const storageKey = getQuestionCountStorageKey();
+    const stored = localStorage.getItem(storageKey);
+    return stored ? parseInt(stored, 10) : 8; // Default to 8 if not found
+}
+
+// Save question count to localStorage
+function saveQuestionCount(count) {
+    const storageKey = getQuestionCountStorageKey();
+    localStorage.setItem(storageKey, count.toString());
+}
+
 // Initialize page after auth check
 async function initializePage() {
+    // Load the saved question count
+    questionCount = loadQuestionCount();
     setupEventListeners();
     await loadExamDetails();
     await initializeTable();
@@ -106,7 +142,7 @@ async function loadExamDetails() {
     // Update download memo button based on report availability
     if (!hasExaminersReport(subject, sessionType, year, paper)) {
         downloadMemoBtn.disabled = true;
-        downloadMemoBtn.title = "Examiner's report not yet available for this exam";
+        downloadMemoBtn.title = "Examiner's report not yet available for this exam. Check the actuarial society website for updates";
         downloadMemoBtn.style.opacity = '0.5';
         downloadMemoBtn.style.cursor = 'not-allowed';
     } else {
@@ -201,19 +237,23 @@ function addTotalRow(existingGradings = []) {
         }
     });
     
-    // Always calculate percentage out of 100
-    const percentage = (totalMarksAwarded / 100) * 100; // This simplifies to totalMarksAwarded, but kept for clarity
+    // Determine denominator for score display and percentage calculation
+    // If available marks exceed 100, use that value; otherwise use 100
+    const scoreDenominator = sumOfAvailableMarks > 100 ? sumOfAvailableMarks : 100;
+    const percentage = (totalMarksAwarded / scoreDenominator) * 100;
     const grade = totalMarksAwarded > 0 ? calculateGradeFromPercentage(percentage) : '—';
-    const scoreDisplay = `${totalMarksAwarded.toFixed(1)}/100`;
+    const scoreDisplay = `${totalMarksAwarded.toFixed(1)}/${scoreDenominator.toFixed(1)}`;
     
     // Check if sum of available marks exceeds 100 (strictly greater than)
     const warningClass = sumOfAvailableMarks > 100 ? 'total-warning' : '';
     const warningIcon = sumOfAvailableMarks > 100 ? 
         `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 16px; height: 16px; margin-left: 5px; vertical-align: middle; color: #ffc107;" title="Sum of available marks (${sumOfAvailableMarks.toFixed(1)}) exceeds 100!"><path d="M12 2L2 22H22L12 2Z" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 9V13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="17" r="1" fill="currentColor"/></svg>` : '';
     
-    // Display sum of available marks only if it exceeds 100
-    const availableMarksInfo = sumOfAvailableMarks > 100 ? 
-        `<div style="font-size: 0.75em; color: rgba(255,255,255,0.7); margin-top: 2px;">⚠️ Sum of Available Marks Exceeds 100: ${sumOfAvailableMarks.toFixed(1)} marks</div>` : '';
+    // Always display sum of available marks, with warning styling if it exceeds 100
+    const warningStyle = sumOfAvailableMarks > 100 ? 'color: #ffc107;' : 'color: rgba(255,255,255,0.7);';
+    const warningPrefix = sumOfAvailableMarks > 100 ? '⚠️ ' : '';
+    const availableMarksInfo = 
+        `<div style="font-size: 0.75em; ${warningStyle} margin-top: 2px;">${warningPrefix}Total Available Marks: ${sumOfAvailableMarks.toFixed(1)}</div>`;
     
     row.innerHTML = `
         <td><strong>TOTAL</strong></td>
@@ -379,17 +419,52 @@ function setupEventListeners() {
     // Add question row
     addRowBtn.addEventListener('click', async () => {
         questionCount++;
+        saveQuestionCount(questionCount); // Save to localStorage
         const existingGradings = await loadExistingGradings();
         addQuestionRow(questionCount, existingGradings);
+        // Update total row with new question count
+        await updateTotalRow();
     });
     
     // Remove last row
-    removeRowBtn.addEventListener('click', () => {
+    removeRowBtn.addEventListener('click', async () => {
         if (questionCount > 1) {
             const rows = gradingTableBody.getElementsByTagName('tr');
-            if (rows.length > 0) {
+            if (rows.length > 1) { // Must have more than total row
+                // Check if the last question has been graded
+                const existingGradings = await loadExistingGradings();
+                const lastQuestionGrade = existingGradings.find(g => g.question == questionCount);
+                
+                if (lastQuestionGrade) {
+                    // Show modal and wait for user response
+                    const confirmDelete = await showDeleteConfirmModal(questionCount);
+                    if (!confirmDelete) return;
+                    
+                    // Delete the grade from Firestore and IndexedDB
+                    try {
+                        const gradingId = `${currentUser.uid}_${subject}_${year}_${sessionType}_P${paper}_Q${questionCount}`;
+                        
+                        // Delete from Firestore
+                        await firestoreData.deleteQuestionGrade(currentUser.uid, subject, year, sessionType, paper, questionCount);
+                        
+                        // Delete from IndexedDB
+                        await indexedDBStorage.deleteQuestionGrade(currentUser.uid, subject, year, sessionType, paper, questionCount);
+                        
+                        console.log(`Deleted grade for question ${questionCount}`);
+                    } catch (error) {
+                        console.error('Error deleting question grade:', error);
+                        alert('Error deleting the saved grade. Please try again.');
+                        return;
+                    }
+                }
+                
+                // Remove the row
                 gradingTableBody.removeChild(rows[rows.length - 1]);
                 questionCount--;
+                saveQuestionCount(questionCount); // Save to localStorage
+                
+                // Update total row after removal
+                await updateTotalRow();
             }
         } else {
             alert('You must have at least one question.');
@@ -466,6 +541,26 @@ function setupEventListeners() {
         navigateToGrading(currentQuestionNumber, true);
     });
 
+    // Delete confirmation modal buttons
+    const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+    const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+    
+    confirmDeleteBtn.addEventListener('click', () => {
+        hideDeleteConfirmModal();
+        if (deleteConfirmResolve) {
+            deleteConfirmResolve(true);
+            deleteConfirmResolve = null;
+        }
+    });
+
+    cancelDeleteBtn.addEventListener('click', () => {
+        hideDeleteConfirmModal();
+        if (deleteConfirmResolve) {
+            deleteConfirmResolve(false);
+            deleteConfirmResolve = null;
+        }
+    });
+
     // Close modals when clicking outside
     reviewTypeModal.addEventListener('click', (e) => {
         if (e.target === reviewTypeModal) {
@@ -476,6 +571,17 @@ function setupEventListeners() {
     aiInstructionsModal.addEventListener('click', (e) => {
         if (e.target === aiInstructionsModal) {
             hideAiInstructionsModal();
+        }
+    });
+
+    const deleteConfirmModal = document.getElementById('deleteConfirmModal');
+    deleteConfirmModal.addEventListener('click', (e) => {
+        if (e.target === deleteConfirmModal) {
+            hideDeleteConfirmModal();
+            if (deleteConfirmResolve) {
+                deleteConfirmResolve(false);
+                deleteConfirmResolve = null;
+            }
         }
     });
 }

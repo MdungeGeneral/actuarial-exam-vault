@@ -307,6 +307,34 @@ class IndexedDBStorageService {
             return [];
         }
     }
+
+    // Delete a specific question grade
+    async deleteQuestionGrade(userId, subject, year, session, paper, question) {
+        try {
+            await this.ensureDB();
+
+            const id = `grade_${userId}_${subject}_${year}_${session}_P${paper}_Q${question}`;
+
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction([this.storeName], 'readwrite');
+                const objectStore = transaction.objectStore(this.storeName);
+                const request = objectStore.delete(id);
+
+                request.onsuccess = () => {
+                    console.log(`Deleted grade from IndexedDB: ${id}`);
+                    resolve({ success: true });
+                };
+
+                request.onerror = () => {
+                    console.error('Error deleting grade from IndexedDB:', request.error);
+                    reject(request.error);
+                };
+            });
+        } catch (error) {
+            console.error('Error in deleteQuestionGrade:', error);
+            return { success: false, error: error.message };
+        }
+    }
 }
 
 // Create and export a single instance

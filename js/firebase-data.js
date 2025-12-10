@@ -239,15 +239,21 @@ class FirestoreDataService {
         }
     }
 
-    // Get user gradings as array
+    // Get user gradings as array (includes both submission-based and standalone grades)
     async getUserGradings(userId) {
         try {
-            const result = await this.getAllUserGradings(userId);
-            if (result.success) {
-                // Convert object to array
-                return Object.values(result.data);
-            }
-            return [];
+            const q = query(
+                collection(db, this.gradingsCollection),
+                where('userId', '==', userId)
+            );
+            const querySnapshot = await getDocs(q);
+            
+            const gradings = [];
+            querySnapshot.forEach((doc) => {
+                gradings.push(doc.data());
+            });
+            
+            return gradings;
         } catch (error) {
             console.error('Error getting user gradings:', error);
             return [];

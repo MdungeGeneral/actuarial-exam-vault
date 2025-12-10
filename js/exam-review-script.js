@@ -159,8 +159,88 @@ async function initializeTable() {
     // Load existing gradings from Firestore
     const existingGradings = await loadExistingGradings();
     
+    // Add total row first
+    addTotalRow(existingGradings);
+    
     for (let i = 1; i <= questionCount; i++) {
         addQuestionRow(i, existingGradings);
+    }
+}
+
+// Calculate grade from percentage
+function calculateGradeFromPercentage(percentage) {
+    if (percentage >= 60) {
+        return 'P';
+    } else if (percentage >= 50) {
+        return 'FA';
+    } else if (percentage >= 40) {
+        return 'FB';
+    } else if (percentage >= 30) {
+        return 'FC';
+    } else {
+        return 'FD';
+    }
+}
+
+// Add total row
+function addTotalRow(existingGradings = []) {
+    const row = document.createElement('tr');
+    row.classList.add('total-row');
+    row.id = 'totalRow';
+    
+    // Calculate totals
+    let totalMarksAwarded = 0;
+    let totalMaxMarks = 0;
+    
+    existingGradings.forEach(g => {
+        if (g.marks !== undefined && g.maxMarks !== undefined) {
+            totalMarksAwarded += parseFloat(g.marks) || 0;
+            totalMaxMarks += parseFloat(g.maxMarks) || 0;
+        }
+    });
+    
+    const percentage = totalMaxMarks > 0 ? (totalMarksAwarded / totalMaxMarks) * 100 : 0;
+    const grade = totalMaxMarks > 0 ? calculateGradeFromPercentage(percentage) : '—';
+    const scoreDisplay = totalMaxMarks > 0 ? `${totalMarksAwarded.toFixed(1)}/${totalMaxMarks}` : '—/100';
+    
+    // Check if total exceeds 100
+    const warningClass = totalMaxMarks > 100 ? 'total-warning' : '';
+    const warningIcon = totalMaxMarks > 100 ? 
+        '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 16px; height: 16px; margin-left: 5px; vertical-align: middle; color: #ffc107;"><path d="M12 2L2 22H22L12 2Z" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 9V13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="17" r="1" fill="currentColor"/></svg>' : '';
+    
+    row.innerHTML = `
+        <td><strong>TOTAL</strong></td>
+        <td colspan="2" class="question-cell">
+            <div class="question-title"><strong>Overall Exam Performance</strong></div>
+        </td>
+        <td class="score-cell ${warningClass}">
+            <strong>${scoreDisplay}</strong>${warningIcon}
+        </td>
+        <td class="grade-cell">
+            <strong>${grade}</strong>
+            ${percentage > 0 ? `<span style="font-size: 0.85em; color: rgba(255,255,255,0.8);"> (${percentage.toFixed(1)}%)</span>` : ''}
+        </td>
+        <td></td>
+    `;
+    
+    gradingTableBody.appendChild(row);
+}
+
+// Update the total row with current gradings
+async function updateTotalRow() {
+    const existingGradings = await loadExistingGradings();
+    const totalRow = document.getElementById('totalRow');
+    if (totalRow) {
+        // Remove old total row
+        totalRow.remove();
+    }
+    // Add updated total row at the beginning
+    const tbody = gradingTableBody;
+    const firstChild = tbody.firstChild;
+    addTotalRow(existingGradings);
+    if (firstChild) {
+        const newTotalRow = tbody.lastChild;
+        tbody.insertBefore(newTotalRow, firstChild);
     }
 }
 
@@ -169,8 +249,15 @@ async function loadExistingGradings() {
     if (!currentUser) return [];
     
     try {
-        const gradings = await firestoreData.getUserGradings(currentUser.uid);
+        // Try Firestore first
+        let gradings = await firestoreData.getUserGradings(currentUser.uid);
         
+        // Fallback to IndexedDB if Firestore returns empty
+        if (!gradings || gradings.length === 0) {
+            gradings = await indexedDBStorage.getQuestionGrades(currentUser.uid);
+        }
+        
+        // Filter for current exam
         return gradings.filter(g => 
             g.subject === subject &&
             g.year == year &&
@@ -179,7 +266,19 @@ async function loadExistingGradings() {
         );
     } catch (error) {
         console.error('Error loading gradings:', error);
-        return [];
+        // Try IndexedDB as final fallback
+        try {
+            const gradings = await indexedDBStorage.getQuestionGrades(currentUser.uid);
+            return gradings.filter(g => 
+                g.subject === subject &&
+                g.year == year &&
+                g.session.toUpperCase() === sessionType.toUpperCase() &&
+                g.paper == paper
+            );
+        } catch (idbError) {
+            console.error('Error loading from IndexedDB:', idbError);
+            return [];
+        }
     }
 }
 

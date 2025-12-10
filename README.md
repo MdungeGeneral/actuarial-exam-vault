@@ -59,7 +59,7 @@ A web-based exam preparation platform for actuarial students, providing timed pr
 
 Contributions welcome! Focus areas:
 - Adding more past paper links
-- Improving exam timer accuracy
+- Adding features
 - Enhancing progress analytics
 - Mobile responsiveness
 

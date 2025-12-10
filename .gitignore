@@ -6,7 +6,6 @@ resources/
 # Export files (generated content)
 exports/
 # Note: We want to track HTML files for our web app, so removed *.html
-*.docx
 *.epub
 
 # Temporary files

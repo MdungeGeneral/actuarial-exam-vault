@@ -66,10 +66,10 @@ document.querySelectorAll('.action-btn').forEach(btn => {
     });
 });
 
-// Add click handlers for dashboard cards (except Past Papers and Progress Tracker which have real links)
+// Add click handlers for dashboard cards (except Past Papers, Progress Tracker, and Help & Support which have real links)
 document.querySelectorAll('.card-link').forEach(link => {
     const href = link.getAttribute('href');
-    if (href !== 'subjects.html' && href !== 'progress-tracker.html') {
+    if (href !== 'subjects.html' && href !== 'progress-tracker.html' && href !== 'help-support.html') {
         link.addEventListener('click', (e) => {
             e.preventDefault();
             alert('This feature is coming soon! For now, explore the past papers in the workspace.');
